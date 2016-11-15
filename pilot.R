@@ -86,20 +86,40 @@ plot(fhab2, col=c(colorRampPalette(c("#DD4D46","#ED9349","#4FAFAF","#43AA8B"))(l
 # r2 - Beaverhead Deerlodge as a raster, (values = cell# in the forest, NA everywhere else)
 identical(coordinates(fhab2), coordinates(r), coordinates(r2), coordinates(bhdlr))
 
-a3 <-extract(fhab2, shp, method=bilinear, cellnumbers=TRUE)
 
+# Trying to extract fhab2 raster values from bhdl cells
+# This method does not work because it's taking values of fhab based on the shapefile, not the bhdlr raster
+# a3 <-extract(fhab2, shp, method=bilinear, cellnumbers=TRUE)
+# a3 <-as.data.frame(a3[[1]][,1:2])
+# a3[is.na(a3$value), ] <-0
+# a3 <-a3[a3$value!=0,]
+# hist(a3$value)
+# quantile(a3$value, .5)
+# a3 <-a3[a3$value>=quantile(a3$value, .75),]
+# a3<- a3[order(-a3$value),] 
+# a3$priority <-1:nrow(a3)
+# cellstosample <-a3$cell
 
-bhdlr[is.na(bhdlr),] <-0
-cellstosample <-which(values(bhdlr != 0))
+# plot(bhdlr)
+# r3 <- bhdlr
+# r3[setdiff(seq_len(ncell(r3)), cellstosample)] <- NA
+# r3[!is.na(r3)] <- 1
+# plot(rasterToPolygons(r3, dissolve=TRUE), add=TRUE, border='red', lwd=2)
 
-cellstosample<-which(a2 != 0)
-rsample <- rasterFromCells(r, cellstosample)
+s <-stack(fhab2,bhdlr)
+cellstosample <-which(values(bhdlr==1))
+mat <- as.data.frame(extract(s,cellstosample))
+mat$cells <-cellstosample
+mat <-as.data.frame(na.omit(mat))
+mat <-mat[mat$fisher>=quantile(mat$fisher, .75),]
+mat <- mat[order(-mat$fisher),] 
+mat$priority <-1:nrow(mat)
 
+cellstosamplefisher <-mat$cells
+cellstosamplefisher2 <-mat$cells[mat$priority<13]
 
-#r3 <- rasterFromCells(fhab2, cellstosample, values=TRUE)
-
-
-s <- sampleRandom(r, 100, cells=TRUE, xy=TRUE)
-# display 
-r[s[,1]] <- 2
-plot(r) 
+r2[values(r2)%in%cellstosamplefisher,]<-7000
+r2[values(r2)%in%cellstosamplefisher2,]<-10000
+plot(r2)
+plot(fhab2, col=c(colorRampPalette(c("#DD4D46","#ED9349","#4FAFAF","#43AA8B"))(length(unique(values(fhab2))))))
+plot(r2,add=TRUE)
