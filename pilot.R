@@ -5,6 +5,7 @@
 
 # Load packages
 library(raster)
+library(rgdal)
 
 
 # read in raster and shapefiles
@@ -34,3 +35,71 @@ a2[is.na(a2),] <-0
 # the above action goes really slowly - try rasterizing fgrid
 fgridr <-rasterize(fgrid, fhabcrop)
 
+
+#########################################################################################
+# Method from Josh Nowak to create grid with raster package
+dsn <-"C:/Users/jgolding/Documents/USFS_R1_Carnivore_Monitoring/GIS/USFS"
+dsn2 <-"C:/Users/jgolding/Documents/USFS_R1_Carnivore_Monitoring/GIS/RMRS"
+
+shp <-readOGR(dsn=dsn,layer="r1_beaverheaddeerlodge_nf_UTM")
+shp2 <-readOGR(dsn=dsn2,layer="Fisher_5_mile_Grid_UTM_Habit_UTM_83Z11")
+
+# Create extent for "reference" raster that will evently fit 5x5 mi (8046.72 x 8046.72 m) grid cells
+# Extent calculated from shp UTM coordinates 
+ext<-extent(shp)
+extb <-c(ext@xmin - (((33*8046.72) - (ext@xmax-ext@xmin)/2)),ext@xmax + (((33*8046.72) - (ext@xmax-ext@xmin)/2)),
+         ext@ymin - (((33*8046.72) - (ext@ymax-ext@ymin)/2)),ext@ymax + (((33*8046.72) - (ext@ymax-ext@ymin)/2)))
+extb <-matrix(NA,2,2)
+extb[1,1] <-ext@xmin - (((33*8046.72) - (ext@xmax-ext@xmin)/2))
+extb[1,2] <-ext@xmax + (((33*8046.72) - (ext@xmax-ext@xmin)/2))
+extb[2,1] <-ext@ymin - (((33*8046.72) - (ext@ymax-ext@ymin)/2))
+extb[2,2] <-ext@ymax + (((33*8046.72) - (ext@ymax-ext@ymin)/2))
+
+# Define resolution for "reference" raster
+res <-c(8046.72,8046.72)
+
+# Create "reference" raster - r 
+r <- raster(extent(extb), res=res, crs=crs(shp))
+# add cell values for plotting purposes only!
+r[] <-1:ncell(r) 
+# plot to visualize (sunset palette from coolors color palette)
+plot(r, col=c(colorRampPalette(c("#DD4D46","#ED9349","#4FAFAF","#43AA8B"))(ncell(r))))
+    
+# rasterize Beaverhead-Deerlodge shapefile using "reference" raster r
+# in the raster file bhdlr values are 1 for raster cells within BHDL 
+bhdlr <-rasterize(shp,r)
+
+# you can also create a raster of Beaverhead-Deerlodge cells using the mask function
+# in the raster file r2 values correspond to cell number (like in r raster)
+r2 <-mask(r,bhdlr)
+
+# project fisher habitat raster with the same extent and coordinate system as "reference" raster
+fhab2 <-projectRaster(fhab, r)
+
+# visualize
+plot(fhab2, col=c(colorRampPalette(c("#DD4D46","#ED9349","#4FAFAF","#43AA8B"))(length(unique(values(fhab2))))))
+
+# check to see that all coordinates are identical
+# fhab2 - habitat information
+# r - reference raster (values = cell #s for display purposes only)
+# bhdlr - Beaverhead Deerlodge as a raster, (values = 1 in the forest, NA everywhere else)
+# r2 - Beaverhead Deerlodge as a raster, (values = cell# in the forest, NA everywhere else)
+identical(coordinates(fhab2), coordinates(r), coordinates(r2), coordinates(bhdlr))
+
+a3 <-extract(fhab2, shp, method=bilinear, cellnumbers=TRUE)
+
+
+bhdlr[is.na(bhdlr),] <-0
+cellstosample <-which(values(bhdlr != 0))
+
+cellstosample<-which(a2 != 0)
+rsample <- rasterFromCells(r, cellstosample)
+
+
+#r3 <- rasterFromCells(fhab2, cellstosample, values=TRUE)
+
+
+s <- sampleRandom(r, 100, cells=TRUE, xy=TRUE)
+# display 
+r[s[,1]] <- 2
+plot(r) 
