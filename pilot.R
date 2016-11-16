@@ -69,6 +69,10 @@ plot(r, col=c(colorRampPalette(c("#DD4D46","#ED9349","#4FAFAF","#43AA8B"))(ncell
 # in the raster file bhdlr values are 1 for raster cells within BHDL 
 bhdlr <-rasterize(shp,r)
 
+# rasterize sampling grid file (fgrid)
+fgridr2 <- rasterize(fgrid,r)
+writeRaster(fgridr2, filename="USFS_R1_Carnivore_Monitoring/GIS/bhdlfisher5migrid.tif", overwrite=TRUE)
+
 # you can also create a raster of Beaverhead-Deerlodge cells using the mask function
 # in the raster file r2 values correspond to cell number (like in r raster)
 r2 <-mask(r,bhdlr)
