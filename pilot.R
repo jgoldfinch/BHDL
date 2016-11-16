@@ -111,15 +111,29 @@ cellstosample <-which(values(bhdlr==1))
 mat <- as.data.frame(extract(s,cellstosample))
 mat$cells <-cellstosample
 mat <-as.data.frame(na.omit(mat))
-mat <-mat[mat$fisher>=quantile(mat$fisher, .75),]
+#mat <-mat[mat$fisher>=quantile(mat$fisher, .75),]
 mat <- mat[order(-mat$fisher),] 
 mat$priority <-1:nrow(mat)
 
-cellstosamplefisher <-mat$cells
+cellstosamplefisher <-sort(mat$cells)
 cellstosamplefisher2 <-mat$cells[mat$priority<13]
 
-r2[values(r2)%in%cellstosamplefisher,]<-7000
+
 r2[values(r2)%in%cellstosamplefisher2,]<-10000
 plot(r2)
-plot(fhab2, col=c(colorRampPalette(c("#DD4D46","#ED9349","#4FAFAF","#43AA8B"))(length(unique(values(fhab2))))))
-plot(r2,add=TRUE)
+
+writeRaster(r2, filename="USFS_R1_Carnivore_Monitoring/GIS/bhdlfishersample.tif", overwrite=TRUE)
+#############################################################################################
+# Lynx habitat
+lynx <-raster("C:/Users/jgolding/Documents/USFS_R1_Carnivore_Monitoring/GIS/USFS/tdrive/lynx/lynx_habitat_nrla_2005_100k/lynxhab2005.tif")
+plot(lynx)
+
+# project lynx habitat raster with the same extent and coordinate system as "reference" raster
+lhab <-projectRaster(lynx, r)
+plot(lhab, col=c(colorRampPalette(c("#DD4D46","#ED9349","#4FAFAF","#43AA8B"))(length(unique(values(lhab))))))
+identical(coordinates(fhab2), coordinates(r), coordinates(r2), coordinates(bhdlr), coordinates(lhab))
+
+
+s2 <-stack(lhab,bhdlr)
+cellstosamplelynx <-which(values(bhdlr==1))
+mat2 <- as.data.frame(extract(s2,cellstosamplelynx))
