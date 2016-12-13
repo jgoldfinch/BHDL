@@ -6,6 +6,7 @@
 # Load packages
 library(raster)
 library(rgdal)
+library(tmvtnorm)
 
 
 # read in raster and shapefiles
@@ -18,19 +19,19 @@ bhdl <-shapefile("C:/Users/jgolding/Documents/USFS_R1_Carnivore_Monitoring/GIS/U
 
 
 # select cells with 10 or more % in BHDL
-fgridint <-fgridint[fgridint$Percent >= 10,]
-keepid <-fgridint$ID
+# fgridint <-fgridint[fgridint$Percent >= 10,]
+# keepid <-fgridint$ID
 
-#subset fgrid to only those with 10% or more
-fgrid <-fgrid[fgrid$ID %in% keepid,]
+# subset fgrid to only those with 10% or more
+# fgrid <-fgrid[fgrid$ID %in% keepid,]
 
 # quantify amount of fisher habitat within each of the selected cells
 # crop habitat raster for quicker calculation
 fhabcrop <-crop(fhab, bhdl)
-a<-extract(fhabcrop, fgrid, fun=mean)
-a2<-extract(fhabcrop, fgrid, fun=max, cellnumbers=TRUE)
+# a<-extract(fhabcrop, fgrid, fun=mean)
+# a2<-extract(fhabcrop, fgrid, fun=max, cellnumbers=TRUE)
 
-a2[is.na(a2),] <-0
+#a2[is.na(a2),] <-0
 
 # the above action goes really slowly - try rasterizing fgrid
 fgridr <-rasterize(fgrid, fhabcrop)
@@ -126,7 +127,11 @@ cellstosamplefisher2 <-mat$cells[mat$priority<13]
 r2[values(r2)%in%cellstosamplefisher2,]<-10000
 plot(r2)
 
+# write sampling raster to file
 writeRaster(r2, filename="USFS_R1_Carnivore_Monitoring/GIS/bhdlfishersample.tif", overwrite=TRUE)
+
+# write habitat raster to file
+writeRaster(fhab2, filename="USFS_R1_Carnivore_Monitoring/GIS/bhdlfisherhabraster.tif", overwrite=TRUE)
 #############################################################################################
 # Lynx habitat
 lynx <-raster("C:/Users/jgolding/Documents/USFS_R1_Carnivore_Monitoring/GIS/USFS/tdrive/lynx/lynx_habitat_nrla_2005_100k/lynxhab2005.tif")
@@ -141,3 +146,107 @@ identical(coordinates(fhab2), coordinates(r), coordinates(r2), coordinates(bhdlr
 s2 <-stack(lhab,bhdlr)
 cellstosamplelynx <-which(values(bhdlr==1))
 mat2 <- as.data.frame(extract(s2,cellstosamplelynx))
+
+
+
+#########################################################################################
+
+# Fisher power anaylsis
+# Starting assumption - 3 fisher
+f <-3
+
+# Sampling grid - r2 (where values = 10000)
+
+# Distribute them non-randomly on the landscape using the "animalsnonrandomhab" function
+# function takes the following argument
+
+# n = # of animals
+# aoi = area of interest
+# hab = habitat raster
+# spmin = habitat cutoff for species
+source("USFS_R1_Carnivore_Monitoring/data/simulation/animalsnonrandomhab.R")
+xy <-animalsnonrandomhab(f,bhdl,fhab,0.05)
+
+# Simulate locations at each temporal replicate by simulating 
+# home range data using a multivariate normal
+
+# create matrix to hold data
+# total number of observations
+n <-3
+reps <-2
+n.obs <- n*reps
+nindv <-as.numeric(rep(1:n,reps))
+
+############## This only needs to be created for the non-closure assumption ##############
+hrc <-matrix(NA,nrow=n.obs,ncol=3)
+
+# Specify covariance matrix
+sigma <-matrix(c(1,0,0,1),nrow = 2, ncol = 2)
+
+
+for (i in 1:n.obs){
+  hrc[i,1] <-nindv[i]
+  #Truncated mulitvariate normal using the tmvtnorm package
+  hrc[i,2:3]<-rtmvnorm(1,as.numeric(xy[hrc[i,1],]),sigma,lower=c(ext@xmin,ext@ymin), upper= c(ext@xmax, ext@ymax)) 
+}
+
+hrc <-as.data.frame(hrc)
+hrc$reps <-rep(1:reps,each=n)
+colnames(hrc)<-c("indiv","x","y","reps")
+
+###########################################################################################
+# Create yhat (true occupancy)
+test<-as.data.frame(rasterToPoints(r2,cellnumbers=TRUE))
+test$cell <-rep(1:ncell(r2))
+sampledcells<-test$cell[test$layer==10000]
+
+
+# fill in yhat - are the cells occupied at the time of sampling
+scells <-matrix(NA,length(sampledcells),reps)
+scells <-as.data.frame(cbind(scells[,1],scells[,2],scells[,3],scells[,4],sampledcells))
+
+# scells[i,j] <-as.numeric(extract(rsgrid,hrc[hrc$reps==j & hrc$indiv==i,2:3]))
+
+tmp <-matrix(NA,reps,n)
+index <- 1:length(sampledcells)
+
+for(i in 1:length(index)){
+  for (j in 1:reps){
+    for (k in 1:n){ 
+      tmp[j,k]<-as.data.frame(extract(rsgrid,hrc[hrc$reps==j & hrc$indiv==k,2:3],cellnumbers=TRUE))[,1]
+    }
+    scells[i,j] <-ifelse(scells$sampledcells[i] %in% tmp[j,]==TRUE,1,0)
+  }
+}
+
+
+# Now create matrix for yhat
+yhat <-as.data.frame(cbind(scells[,1],scells[,2],scells[,3],scells[,4]))
+
+
+#Now create y which is actual deteciton
+
+# set a detection probabilty (p)
+p <-0.5
+
+
+# generate matrix to hold data
+y <-matrix(NA,length(sampledcells),reps)
+
+
+# simulate observation data - observation process
+
+for (j in 1:reps){ 
+  y[,j] <-rbinom(n=length(sampledcells), size=1, prob = (yhat*p)[,j])
+}
+
+y<-as.data.frame(y)
+
+#Plots
+plot(brnf.r)
+points(xy)
+points(hrc[hrc$reps==1,2],hrc[hrc$reps==1,3], col="red", pch=20)
+points(hrc[hrc$reps==2,2],hrc[hrc$reps==2,3], col="blue", pch=20)
+points(hrc[hrc$reps==3,2],hrc[hrc$reps==3,3], col="green", pch=20)
+points(hrc[hrc$reps==4,2],hrc[hrc$reps==4,3], col="orange", pch=20)
+
